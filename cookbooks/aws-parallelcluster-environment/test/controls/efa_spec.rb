@@ -1,0 +1,92 @@
+# Copyright:: 2023 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License").
+# You may not use this file except in compliance with the License. A copy of the License is located at
+#
+# http://aws.amazon.com/apache2.0/
+#
+# or in the "LICENSE.txt" file accompanying this file.
+# This file is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, express or implied.
+# See the License for the specific language governing permissions and limitations under the License.
+
+control 'efa_conflicting_packages_removed' do
+  title 'Check packages conflicting with EFA are not installed'
+
+  if os.redhat?
+    openmpi_packages = %w(openmpi-devel openmpi)
+  elsif os.debian?
+    openmpi_packages = %w(libopenmpi-dev)
+  else
+    describe "unsupported OS" do
+      pending "support for #{os.name}-#{os.release} needs to be implemented"
+    end
+  end
+
+  openmpi_packages.each do |pkg|
+    describe package(pkg) do
+      it { should_not be_installed }
+    end
+  end
+end
+
+control 'tag:install_efa_prereq_packages_installed' do
+  title "EFA prereq packages are installed"
+
+  efa_prereq_packages = if os_properties.redhat8? && !os_properties.redhat_on_docker?
+                          %w(environment-modules libibverbs-utils librdmacm-utils rdma-core-devel)
+                        elsif os_properties.alinux2?
+                          %w(environment-modules libibverbs-utils librdmacm-utils)
+                        else
+                          %w(environment-modules)
+                        end
+  efa_prereq_packages.each do |pkg|
+    describe package(pkg) do
+      it { should be_installed }
+    end
+  end
+end
+
+control 'tag:config_efa_installed' do
+  title 'Check EFA is installed'
+
+  only_if { !os_properties.on_docker? && !(os_properties.centos7? && os_properties.arm?) }
+
+  describe "Verify EFA Kernel module is available\n" do
+    describe command("modinfo efa") do
+      its('exit_status') { should eq(0) }
+      its('stdout') { should match "description:\s+Elastic Fabric Adapter" }
+    end
+  end
+
+  unless instance.custom_ami?
+    describe 'Verify EFA version' do
+      subject { file('/opt/amazon/efa_installed_packages') }
+      it { should exist }
+      its('content') { should match /EFA installer version: #{node['cluster']['efa']['installer_version']}/ }
+    end
+  end
+end
+
+control 'tag:config_efa_debian_system_settings_configured' do
+  title 'Check debian system is correctly configured for EFA'
+
+  only_if { os.debian? && !os_properties.on_docker? }
+
+  ptrace_scope = instance.head_node? ? 1 : 0
+  if ptrace_scope == 1
+    describe 'Verify ptrace config file is not present' do
+      subject { file('/etc/sysctl.d/99-chef-kernel.yama.ptrace_scope.conf') }
+      it { should_not exist }
+    end
+  else
+    describe 'Verify ptrace config file is present' do
+      subject { file('/etc/sysctl.d/99-chef-kernel.yama.ptrace_scope.conf') }
+      it { should exist }
+      its('content') { should match /kernel.yama.ptrace_scope = #{ptrace_scope}/ }
+    end
+  end
+
+  describe kernel_parameter('kernel.yama.ptrace_scope') do
+    its('value') { should eq ptrace_scope }
+  end
+end

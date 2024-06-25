@@ -1,0 +1,105 @@
+---
+driver:
+  name: dokken
+  platform: linux/amd64
+  pull_platform_image: false # Use the local images, prevent pull of docker images from Docker Hub,
+  chef_version: 18 # Chef version aligned with the one used to build the images
+  chef_image: cincproject/cinc
+  env:
+    # Since the kernel version of the docker images is not in the expected pattern,
+    # KERNEL_RELEASE is set in the environment to override the system value.
+    - KERNEL_RELEASE=3.10.0-1160.42.2.el7.x86_64
+
+provisioner:
+  name: dokken
+  product_name: cinc
+  chef_binary: /opt/cinc/bin/cinc-client
+  attributes:
+    virtualized: true
+
+transport:
+  name: dokken
+
+verifier:
+  name: inspec
+
+lifecycle:
+  post_verify:
+  - local: |
+      echo "KITCHEN_SAVE_IMAGE=${KITCHEN_SAVE_IMAGE}"
+      [ "${KITCHEN_SAVE_IMAGE}" = true ] || exit 0
+      docker_id=$(docker ps -a | grep ${KITCHEN_INSTANCE_NAME} | awk '{ print $1 }')
+      docker commit ${docker_id} pcluster-${KITCHEN_PHASE}/${KITCHEN_INSTANCE_NAME}:latest
+
+platforms:
+  - name: alinux2
+    driver:
+      image: <% if ENV['KITCHEN_ALINUX2_IMAGE'] %> <%= ENV['KITCHEN_ALINUX2_IMAGE'] %> <% else %> dokken/amazonlinux-2 <% end %>
+    attributes:
+      cluster:
+        base_os: alinux2
+  - name: centos7
+    driver:
+      image: <% if ENV['KITCHEN_CENTOS7_IMAGE'] %> <%= ENV['KITCHEN_CENTOS7_IMAGE'] %> <% else %> dokken/centos-7 <% end %>
+    attributes:
+      cluster:
+        base_os: centos7
+        # Since the kernel version of the docker images is not in the expected pattern, set a fake kernel value to permit to install Lustre on docker.
+        kernel_release: '3.10.0-1160.76.1.el7.fake-value'
+  - name: ubuntu2004
+    driver:
+      image: <% if ENV['KITCHEN_UBUNTU2004_IMAGE'] %> <%= ENV['KITCHEN_UBUNTU2004_IMAGE'] %> <% else %> dokken/ubuntu-20.04 <% end %>
+    attributes:
+      cluster:
+        base_os: ubuntu2004
+        # Since the kernel version of the docker images is not compatible (6.2.0-1016-azure), set a fake kernel value to permit to install Lustre on docker.
+        kernel_release: '5.15.0-1028-aws'
+  - name: ubuntu2204
+    driver:
+      image: <% if ENV['KITCHEN_UBUNTU2204_IMAGE'] %> <%= ENV['KITCHEN_UBUNTU2204_IMAGE'] %> <% else %> dokken/ubuntu-22.04 <% end %>
+    attributes:
+      cluster:
+        base_os: ubuntu2204
+        # Since the kernel version of the docker images is not compatible (6.2.0-1016-azure), set a fake kernel value to permit to install Lustre on docker.
+        kernel_release: '5.15.0-1028-aws'
+  - name: rhel8
+    driver:
+      image: <% if ENV['KITCHEN_RHEL8_IMAGE'] %> <%= ENV['KITCHEN_RHEL8_IMAGE'] %> <% else %> registry.access.redhat.com/ubi8/ubi:8.9 <% end %>
+      intermediate_instructions:
+        - RUN chmod +t /tmp
+    attributes:
+      cluster:
+        base_os: rhel8
+        # Since the kernel version of the docker images is not in the expected pattern, set a fake kernel value to permit to install Lustre on docker.
+        # Specific kernel versions are not compatible with Lustre.
+        kernel_release: '4.18.0-477.13.1.el8_7.fake-value' # Use 477 version to match 8.8 kernel version available on docker
+  - name: rocky8
+    driver:
+      image: <% if ENV['KITCHEN_ROCKY8_IMAGE'] %> <%= ENV['KITCHEN_ROCKY8_IMAGE'] %> <% else %> dokken/rockylinux-8 <% end %>
+    attributes:
+      cluster:
+        base_os: rocky8
+        # Since the kernel version of the docker images is not in the expected pattern, set a fake kernel value to permit to install Lustre on docker.
+        # Specific kernel versions are not compatible with Lustre.
+        kernel_release: '4.18.0-477.10.1.el8_8.fake-value'
+  - name: rhel9
+    driver:
+      image: <% if ENV['KITCHEN_RHEL9_IMAGE'] %> <%= ENV['KITCHEN_RHEL9_IMAGE'] %> <% else %>registry.access.redhat.com/ubi9/ubi <% end %>
+      intermediate_instructions:
+        - RUN chmod +t /tmp
+        - RUN yum install libxcrypt-compat -y
+    attributes:
+      cluster:
+        base_os: rhel9
+        # Since the kernel version of the docker images is not in the expected pattern, set a fake kernel value to permit to install Lustre on docker.
+        # Specific kernel versions are not compatible with Lustre.
+        kernel_release: '5.14.0-362.13.1.el9_3.fake-value' # Use 477 version to match 8.8 kernel version available on docker
+  - name: rocky9
+    driver:
+      image: <% if ENV['KITCHEN_ROCKY9_IMAGE'] %> <%= ENV['KITCHEN_ROCKY9_IMAGE'] %> <% else %> dokken/rockylinux-9 <% end %>
+    attributes:
+      cluster:
+        base_os: rocky9
+        # Since the kernel version of the docker images is not in the expected pattern, set a fake kernel value to permit to install Lustre on docker.
+        # Specific kernel versions are not compatible with Lustre.
+        kernel_release: '5.14.0-362.8.1.el9_3.fake-value'

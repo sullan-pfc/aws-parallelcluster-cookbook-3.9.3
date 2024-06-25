@@ -1,0 +1,117 @@
+name: ParallelCluster Cookbook Validation on Docker
+
+on:
+  push:
+  pull_request:
+    types: [ opened, synchronize, reopened, labeled, unlabeled ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-labels:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Should skip system tests?
+        id: skip_system_tests
+        run: |
+          skip=$(gh api -H "Accept: application/vnd.github+json" /repos/aws/aws-parallelcluster-cookbook/issues/${{ github.event.pull_request.number }}/labels | jq -r '.[].name' | grep -q ^skip-system-tests$ && echo 'true' || echo 'false')
+          echo "Skipping System tests: $skip"
+          echo "skip=$skip" >> $GITHUB_OUTPUT
+        env:
+          GH_TOKEN: ${{ github.token }}
+    outputs:
+      skip_system_tests: ${{ steps.skip_system_tests.outputs.skip }}
+  systemtest:
+    needs: [check-labels]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os:
+          - alinux2
+          - centos7
+          - ubuntu2004
+          - ubuntu2204
+          - rhel8
+          - rocky8
+          - rhel9
+          - rocky9
+      fail-fast: false
+    steps:
+      - uses: actions/checkout@main
+      - name: Free disk space
+        id: free-disk-space
+        run: |
+          df -h /
+          echo "Removing tool cache"
+          # Ref https://github.com/orgs/community/discussions/25678
+          sudo rm -rf /opt/hostedtoolcache
+          echo "Removing docker images"
+          sudo docker image prune --all --force || true
+          echo "Removing large packages" 
+          # Ref https://github.com/apache/flink/blob/master/tools/azure-pipelines/free_disk_space.sh
+          sudo apt-get remove -y '^aspnetcore-.*'
+          sudo apt-get remove -y '^dotnet-.*' --fix-missing
+          sudo apt-get remove -y 'php.*' --fix-missing
+          sudo apt-get remove -y '^mongodb-.*' --fix-missing
+          sudo apt-get remove -y '^mysql-.*' --fix-missing
+          sudo apt-get remove -y azure-cli google-chrome-stable firefox powershell mono-devel libgl1-mesa-dri --fix-missing
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          echo "Removing large directories"
+          rm -rf /usr/share/dotnet/
+          df -h /
+      - name: Get changed files
+        id: changed-files-excluding-tests
+        uses: tj-actions/changed-files@v41.0.0
+        with:
+          files_ignore: |
+            !.*
+            !chefignore
+            !README.md
+            !CHANGELOG.md
+            !**/aws-parallelcluster-*/spec
+            !**/aws-parallelcluster-*/test
+      - name: Install Chef
+        if: steps.changed-files-excluding-tests.outputs.any_changed == 'true' && needs.check-labels.outputs.skip_system_tests != 'true'
+        uses: actionshub/chef-install@main
+        with:
+          omnitruckUrl: omnitruck.cinc.sh
+          project: cinc-workstation
+      - name: Kitchen Test Install
+        if: steps.changed-files-excluding-tests.outputs.any_changed == 'true' && needs.check-labels.outputs.skip_system_tests != 'true'
+        uses: actionshub/test-kitchen@main
+        with:
+          os: ${{ matrix.os }}
+        env:
+          CHEF_LICENSE: accept-no-persist
+          KITCHEN_YAML: kitchen.docker.yml
+          KITCHEN_LOCAL_YAML: cookbooks/aws-parallelcluster-entrypoints/kitchen.entrypoints-install.yml
+          KITCHEN_GLOBAL_YAML: kitchen.global.yml
+          KITCHEN_PHASE: install
+          KITCHEN_SAVE_IMAGE: true
+        continue-on-error: false
+      - name: Set Image Id
+        if: steps.changed-files-excluding-tests.outputs.any_changed == 'true' && needs.check-labels.outputs.skip_system_tests != 'true'
+        run: |
+          PLATFORM=$(echo "${{ matrix.os }}"  | tr a-z A-Z)
+          echo "PLATFORM=${PLATFORM}"
+          echo "KITCHEN_${PLATFORM}_IMAGE=pcluster-install/entrypoints-install-${{ matrix.os }}"
+          echo "KITCHEN_${PLATFORM}_IMAGE=pcluster-install/entrypoints-install-${{ matrix.os }}" >> $GITHUB_ENV
+      - name: Kitchen Test Config
+        if: steps.changed-files-excluding-tests.outputs.any_changed == 'true' && needs.check-labels.outputs.skip_system_tests != 'true'
+        uses: actionshub/test-kitchen@main
+        with:
+          os: ${{ matrix.os }}
+          suite: slurm-config-head-node-x86-64-docker
+        env:
+          CHEF_LICENSE: accept-no-persist
+          KITCHEN_YAML: kitchen.docker.yml
+          KITCHEN_LOCAL_YAML: kitchen.validate-config.yml
+          KITCHEN_GLOBAL_YAML: kitchen.global.yml
+          KITCHEN_PHASE: config
+          KITCHEN_SAVE_IMAGE: false
+          KITCHEN_AWS_REGION: eu-west-1
+          KITCHEN_INSTANCE_TYPE: docker
+        continue-on-error: false

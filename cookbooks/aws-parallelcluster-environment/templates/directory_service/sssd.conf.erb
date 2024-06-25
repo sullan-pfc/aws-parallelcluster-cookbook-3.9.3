@@ -1,0 +1,22 @@
+[domain/default]
+<%# Domain properties are added in lexicographic order to make the resulting configuration easier to navigate %>
+<% @domain_properties.sort_by { |key| key }.to_h.each_pair do |param, value| %>
+<%= "#{param} = #{value}" %>
+<% end %>
+
+[domain/local]
+id_provider = files
+enumerate = True
+
+[sssd]
+config_file_version = 2
+services = nss, pam, ssh
+domains = default, local
+full_name_format = %1$s
+
+[nss]
+filter_users = nobody,root
+filter_groups = nobody,root
+
+[pam]
+offline_credentials_expiration = 7

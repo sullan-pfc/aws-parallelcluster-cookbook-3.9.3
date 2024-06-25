@@ -1,0 +1,10 @@
+awscli
+boto3
+supervisor
+requests
+jsonschema
+jinja2
+requests
+PyYAML
+retrying
+click

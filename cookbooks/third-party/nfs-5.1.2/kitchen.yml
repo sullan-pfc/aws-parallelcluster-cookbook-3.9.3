@@ -1,0 +1,42 @@
+---
+driver:
+  name: vagrant
+
+provisioner:
+  name: chef_infra
+  product_name: <%= ENV['CHEF_PRODUCT_NAME'] || 'chef' %>
+  product_version: <%= ENV['CHEF_VERSION'] || 'latest' %>
+  log_level: <%= ENV['CHEF_LOG_LEVEL'] || 'auto' %>
+  multiple_converge: 2
+  enforce_idempotency: true
+  deprecations_as_errors: true
+  chef_license: accept-no-persist
+
+# TODO(ramereth): Remove on the next release of chef-workstation - 12/20/2022
+transport:
+  name: ssh
+  username: vagrant
+  password: vagrant
+
+verifier:
+  name: inspec
+
+platforms:
+  - name: centos-7
+  - name: centos-stream-8
+  - name: debian-10
+  - name: debian-11
+  - name: fedora-latest
+  - name: ubuntu-18.04
+  - name: ubuntu-20.04
+  - name: ubuntu-22.04
+
+suites:
+  - name: default
+    run_list:
+      - recipe[nfs::default]
+      - recipe[nfs_test::default]
+  - name: server
+    run_list:
+      - recipe[nfs::server]
+      - recipe[nfs_test::issue46]

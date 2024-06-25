@@ -1,0 +1,127 @@
+name: ParallelCluster Cookbook CI
+
+on: [push, pull_request]
+
+jobs:
+  depcheck:
+    runs-on: ubuntu-latest
+    name: DepCheck
+    steps:
+      - uses: actions/checkout@main
+      - name: Dependency Check
+        uses: dependency-check/Dependency-Check_Action@main
+        with:
+          path: '.'
+          format: 'HTML'
+          project: 'aws-parallelcluster-cookbook'
+      - name: Upload Test results
+        uses: actions/upload-artifact@master
+        with:
+          name: Depcheck report
+          path: ${{github.workspace}}/reports
+  ruby:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        name:
+          - Setup Ruby
+        include:
+          - name: Setup Ruby
+
+    steps:
+      - uses: actions/checkout@main
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: 2.7
+      - name: Install dependencies
+        run: bundle install --with style
+      - name: Run Cookstyle
+        run: cookstyle .
+  python:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        name:
+          - Python 3.7 Tests
+          - Python 3.8 Tests
+          - Python 3.9 Tests
+          - Python 3.10 Tests
+          - Python 3.10 Tests Coverage
+          - Code Checks
+        include:
+          - name: Python 3.7 Tests
+            python: 3.7
+            toxenv: py37-nocov
+          - name: Python 3.8 Tests
+            python: 3.8
+            toxenv: py38-nocov
+          - name: Python 3.9 Tests
+            python: 3.9
+            toxenv: py39-nocov
+          - name: Python 3.10 Tests
+            python: '3.10'
+            toxenv: py310-nocov
+          - name: Python 3.10 Tests Coverage
+            python: '3.10'
+            toxenv: py310-cov
+          - name: Code Checks
+            python: '3.10'
+            toxenv: code-linters
+
+    steps:
+      - uses: actions/checkout@main
+      - name: Setup Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install Tox and any other packages
+        run: pip install tox
+      - name: Run Tox
+        run: tox -e ${{ matrix.toxenv }}
+      - name: Upload code coverage report to Codecov
+        uses: codecov/codecov-action@v3
+        if: ${{ endsWith(matrix.toxenv, '-cov') }}
+        with:
+          files: coverage.xml
+          flags: unittests
+          verbose: true
+  shellcheck:
+    name: Shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@main
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          severity: warning
+          ignore_paths: cookbooks/third-party
+  rspec:
+    name: ChefSpec
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        cookbook:
+          - cookbooks/aws-parallelcluster-awsbatch
+          - cookbooks/aws-parallelcluster-computefleet
+          - cookbooks/aws-parallelcluster-environment
+          - cookbooks/aws-parallelcluster-platform
+          - cookbooks/aws-parallelcluster-shared
+          - cookbooks/aws-parallelcluster-slurm
+    steps:
+      - uses: actions/checkout@main
+      - uses: actionshub/chef-install@main
+        with:
+          omnitruckUrl: omnitruck.cinc.sh
+          project: cinc-workstation
+      - name: Run ChefSpec on ${{ matrix.cookbook }}
+        run: |
+          cd ${{ matrix.cookbook }}
+          chef exec rspec
+        env:
+          CHEF_LICENSE: accept-no-persist

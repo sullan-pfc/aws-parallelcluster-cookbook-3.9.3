@@ -1,0 +1,15 @@
+# frozen_string_literal: true
+source chef_repo: "."
+metadata
+
+cookbook "aws-parallelcluster-shared", path: "../aws-parallelcluster-shared"
+
+cookbook "nfs", path: "../third-party/nfs-5.1.2"
+
+# dependency od nfs
+cookbook "line", path: "../third-party/line-4.5.13"
+
+# for shared cookbook
+cookbook "pyenv", path: "../third-party/pyenv-4.2.3"
+cookbook "yum", path: "../third-party/yum-7.4.13"
+cookbook "yum-epel", path: "../third-party/yum-epel-5.0.2"
